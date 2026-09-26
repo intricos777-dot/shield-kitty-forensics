@@ -1,0 +1,6 @@
+[Unit]
+Description=Seal the Shield Kitty evidence chain
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/Projects/shield-kitty-forensics/evidence.py seal
