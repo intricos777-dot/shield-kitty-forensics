@@ -133,14 +133,33 @@ def verify() -> tuple[bool, list[str]]:
     if ANCHOR.exists():
         try:
             a = json.loads(ANCHOR.read_text())
-            if a.get("head") != head_hash(records):
+            sealed_count = a.get("count", 0) or 0
+            sealed_head = a.get("head", GENESIS)
+
+            # The anchor is a SNAPSHOT of the chain at seal time, not a promise
+            # that no record will ever be appended again. Records legitimately
+            # added after a seal are fine — the per-record HMAC chain above
+            # already proves they were not altered. Only compare the PREFIX
+            # the anchor actually witnessed.
+            #
+            # Comparing against the live head (the old behaviour) reported
+            # "CHAIN BROKEN" the moment anything was recorded after a seal,
+            # which is a false alarm in the one tool whose whole job is to be
+            # trusted about tampering.
+            if sealed_count > len(records):
                 problems.append(
-                    f"ANCHOR MISMATCH: sealed head {a.get('head','')[:16]}… "
-                    f"but chain head is {head_hash(records)[:16]}… — "
-                    "records were altered or truncated after sealing")
-            elif a.get("count") and a["count"] != len(records):
-                problems.append(
-                    f"ANCHOR COUNT: sealed at {a['count']} records, chain has {len(records)}")
+                    f"ANCHOR: sealed at {sealed_count} records but chain has only "
+                    f"{len(records)} — records were removed after sealing")
+            else:
+                prefix_head = records[sealed_count - 1]["h"] if sealed_count else GENESIS
+                if prefix_head != sealed_head:
+                    problems.append(
+                        f"ANCHOR MISMATCH: record {sealed_count} hashes {prefix_head[:16]}… "
+                        f"but the seal recorded {sealed_head[:16]}… — the sealed prefix "
+                        f"was altered")
+                elif len(records) > sealed_count:
+                    # Expected: the hourly seal runs between events.
+                    pass
         except Exception as exc:
             problems.append(f"anchor unreadable: {exc}")
 
